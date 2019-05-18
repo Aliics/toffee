@@ -1,0 +1,10 @@
+<hibernate-mapping xmlns="http://www.hibernate.org/xsd/orm/hbm">
+    <class name="fish.eyebrow.toffee.model.ChatModel" table="chat">
+        <id name="id" type="int" column="id">
+            <generator class="native" />
+        </id>
+        <property name="text" type="string" column="text" />
+        <property name="author" type="string" column="author" />
+        <property name="timestamp" type="timestamp" column="timestamp" />
+    </class>
+</hibernate-mapping>
