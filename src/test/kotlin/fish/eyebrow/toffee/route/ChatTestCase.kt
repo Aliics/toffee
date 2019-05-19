@@ -7,6 +7,7 @@ import fish.eyebrow.toffee.model.ChatModel
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.handleRequest
+import io.ktor.server.testing.setBody
 import io.ktor.server.testing.withTestApplication
 import io.mockk.MockKAnnotations
 import io.mockk.every
@@ -14,9 +15,11 @@ import io.mockk.impl.annotations.MockK
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.Session
+import org.hibernate.Transaction
 import org.hibernate.query.Query
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.lang.IllegalArgumentException
 
 internal class ChatTestCase {
     @MockK
@@ -24,6 +27,9 @@ internal class ChatTestCase {
 
     @MockK
     internal lateinit var queryMock: Query<ChatModel>
+
+    @MockK
+    internal lateinit var transactionMock: Transaction
 
     @BeforeEach
     internal fun setUp() {
@@ -35,8 +41,13 @@ internal class ChatTestCase {
         }
 
         every { sessionMock.createQuery(any<String>()) } returns queryMock
+        every { sessionMock.saveOrUpdate(any<String>()) } returns Unit
+        every { sessionMock.transaction } returns transactionMock
+        every { sessionMock.load<ChatModel>(ChatModel::class.java, any()) } throws IllegalArgumentException()
         every { queryMock.setMaxResults(any()) } returns queryMock
         every { queryMock.resultList } returns listOf()
+        every { transactionMock.begin() } returns Unit
+        every { transactionMock.commit() } returns Unit
     }
 
     @Test
@@ -112,6 +123,42 @@ internal class ChatTestCase {
         withTestApplication({ toffeeCommon() }) {
             handleRequest(HttpMethod.Get, "/chat").apply {
                 assertThat(response.status()).isEqualTo(HttpStatusCode.NoContent)
+            }
+        }
+    }
+
+    @Test
+    internal fun `should invoke saveOrUpdate on session when posting new chat`() {
+        withTestApplication({ toffeeCommon() }) {
+            handleRequest(HttpMethod.Post, "/chat") {
+                setBody("""{ "text": "Hello, World!", "author": "Alexander Johnston" }""")
+            }
+
+            verify(exactly = 1) { sessionMock.saveOrUpdate(any()) }
+        }
+    }
+
+    @Test
+    internal fun `should invoke saveOrUpdate on session when updating chat`() {
+        every { sessionMock.load(any(), any()) } returns ChatModel()
+
+        withTestApplication({ toffeeCommon() }) {
+            handleRequest(HttpMethod.Post, "/chat?id=10") {
+                setBody("""{ "text": "Hello, World!", "author": "Alexander Johnston" }""")
+            }
+            handleRequest(HttpMethod.Post, "/chat?id=10") {
+                setBody("""{ "text": "This was overwritten", "author": "Alexander Johnston" }""")
+            }
+
+            verify(exactly = 2) { sessionMock.saveOrUpdate(any()) }
+        }
+    }
+
+    @Test
+    internal fun `should respond with a 400 when no body is given on post`() {
+        withTestApplication({ toffeeCommon() }) {
+            handleRequest(HttpMethod.Post, "/chat").apply {
+                assertThat(response.status()).isEqualTo(HttpStatusCode.BadRequest)
             }
         }
     }
